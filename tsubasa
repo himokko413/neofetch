@@ -1,0 +1,169 @@
+#!/usr/bin/env bash
+# vim: noai:ts=4:sw=4:expandtab
+# 
+# "With these new wings of mine, I can fly just about anywhere. Just watch!"
+#
+# Tsubasa: A (quick and dirty) system information tool, inspired by and using
+# code from Neofetch (https://github.com/dylanaraps/neofetch) by Dylan Araps
+# https://github.com/himokko413/neofetch
+#
+# The MIT License (MIT)
+#
+# Copyright (c) 2015-2020 Dylan Araps, Lucina Paige
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+clear
+reset='\e[0m'
+
+# Configuration (should be customized via Kiria theming)
+
+# Text colors, 0-255
+# Colors are: 'user-fg' 'user-bg' 'host-fg' 'host-bg' 'icon-fg' 'icon-bg' 'info-fg' 'info-bg'
+colors=(16 212 231 117 15 2 0 7)
+
+# Ascii colors, 0-255
+# Colors match to the ascii file, c1~c6.
+# Note that the default config (212 117 231 0 0 0) assumes the default "ReincarnationOS" ascii, which only uses three colors.
+ascii_colors=(212 117 231 0 0 0)
+
+# Info block offset, number
+# In case of embedded color escape codes (which will artificially push the info block), this is a good option to use!
+gap=3
+
+# Left and right ends of info and title (respectively), character(s)
+# Preferably a Powerline special character
+left_edge=""
+title_left_edge=""
+right_edge=""
+title_right_edge=""
+
+# Separator between user and host (for title), and category and info (for info), character(s)
+# Again, preferably Powerline special or space
+separator=" "
+title_separator=""
+
+# Functions
+
+set_colors() {
+    c1="$(tput setaf "$1")"
+    c2="$(tput setaf "$2")"
+    c3="$(tput setaf "$3")"
+    c4="$(tput setaf "$4")"
+    c5="$(tput setaf "$5")"
+    c6="$(tput setaf "$6")"
+}
+
+print_ascii() {
+    ascii_data="$(< "./tsubasa.ascii")"
+
+    # Set locale to get correct padding.
+    LC_ALL="$sys_locale"
+
+    # Calculate size of ascii file in line length / line count.
+    while IFS=$'\n' read -r line; do
+        line=${line//\\\\/\\}
+        line=${line//█/ }
+        ((++lines,${#line}>ascii_len)) && ascii_len="${#line}"
+    done <<< "${ascii_data//\$\{??\}}"
+
+    # Colors.
+    ascii_data="${ascii_data//\$\{c1\}/$c1}"
+    ascii_data="${ascii_data//\$\{c2\}/$c2}"
+    ascii_data="${ascii_data//\$\{c3\}/$c3}"
+    ascii_data="${ascii_data//\$\{c4\}/$c4}"
+    ascii_data="${ascii_data//\$\{c5\}/$c5}"
+    ascii_data="${ascii_data//\$\{c6\}/$c6}"
+
+    ((text_padding=ascii_len+gap))
+    printf '%b\n' "$ascii_data${reset}"
+    LC_ALL=C
+}
+
+prin() {
+    # If $2 doesn't exist we format $1 as info.
+    if [[ "$(trim "$1")" && "$2" ]]; then
+        [[ "$json" ]] && { printf '    %s\n' "\"${1}\": \"${2}\","; return; }
+
+        string="${1}${2:+: $2}"
+    else
+        string="${2:-$1}"
+        local subtitle_color="$info_color"
+    fi
+
+    string="$(trim "${string//$'\e[0m'}")"
+    length="$(strip_sequences "$string")"
+    length="${#length}"
+
+    # Format the output.
+    string="${string/:/${reset}${colon_color}${separator:=:}${info_color}}"
+    string="${subtitle_color}${bold}${string}"
+
+    # Print the info.
+    printf '%b\n' "${text_padding:+\e[${text_padding}C}${zws}${string//\\n}${reset} "
+
+    # Calculate info height.
+    ((++info_height))
+
+    # Log that prin was used.
+    prin=1
+}
+
+trim() {
+    set -f
+    # shellcheck disable=2048,2086
+    set -- $*
+    printf '%s\n' "${*//[[:space:]]/}"
+    set +f
+}
+
+trim_quotes() {
+    trim_output="${1//\'}"
+    trim_output="${trim_output//\"}"
+    printf "%s" "$trim_output"
+}
+
+strip_sequences() {
+    strip="${1//$'\e['3[0-9]m}"
+    strip="${strip//$'\e['[0-9]m}"
+    strip="${strip//\\e\[[0-9]m}"
+    strip="${strip//$'\e['38\;5\;[0-9]m}"
+    strip="${strip//$'\e['38\;5\;[0-9][0-9]m}"
+    strip="${strip//$'\e['38\;5\;[0-9][0-9][0-9]m}"
+
+    printf '%s\n' "$strip"
+}
+
+dynamic_prompt() {
+    # If the ascii art is taller than the info.
+    ((lines=lines>info_height?lines-info_height+1:1))
+
+    printf -v nlines "%${lines}s"
+    printf "%b" "${nlines// /\\n}"
+}
+
+main() {
+    set_colors "${ascii_colors[@]}"
+    print_ascii
+    tput cup 0 0
+    prin "testing" "the thing"
+    prin "tiki from the" "three houses"
+    dynamic_prompt
+}
+
+main
