@@ -35,7 +35,7 @@ reset='\e[0m'
 
 # Text colors, 0-255
 # Colors are: 'user-fg' 'user-bg' 'host-fg' 'host-bg' 'icon-fg' 'icon-bg' 'info-fg' 'info-bg'
-colors=(16 212 231 117 15 2 0 7)
+colors=(16 212 231 117 16 212 16 117)
 
 # Ascii colors, 0-255
 # Colors match to the ascii file, c1~c6.
@@ -59,6 +59,19 @@ separator=" "
 title_separator=""
 
 # Functions
+
+set_text_colors() {
+    tledge="$(tput setaf ${colors[1]})"
+    tleft="$(tput setab ${colors[1]}; tput setaf ${colors[0]})"
+    ttrans="$(tput setab ${colors[3]}; tput setaf ${colors[1]})"
+    tright="$(tput setaf ${colors[2]})"
+    tredge="$(tput sgr0; tput setaf ${colors[3]})"
+    iledge="$(tput setaf ${colors[5]})"
+    ileft="$(tput setab ${colors[5]}; tput setaf ${colors[4]})"
+    itrans="$(tput setab ${colors[7]}; tput setaf ${colors[5]})"
+    iright="$(tput setaf ${colors[6]})"
+    iredge="$(tput sgr0; tput setaf ${colors[7]})"
+}
 
 set_colors() {
     c1="$(tput setaf "$1")"
@@ -100,10 +113,9 @@ prin() {
     if [[ "$(trim "$1")" && "$2" ]]; then
         [[ "$json" ]] && { printf '    %s\n' "\"${1}\": \"${2}\","; return; }
 
-        string="${1}${2:+: $2}"
+        string="${1}${2:+${itrans}${separator}${iright}$2${iredge}${right_edge}}"
     else
         string="${2:-$1}"
-        local subtitle_color="$info_color"
     fi
 
     string="$(trim "${string//$'\e[0m'}")"
@@ -111,8 +123,8 @@ prin() {
     length="${#length}"
 
     # Format the output.
-    string="${string/:/${reset}${colon_color}${separator:=:}${info_color}}"
-    string="${subtitle_color}${bold}${string}"
+    string="${string}"
+    string="${iledge}${left_edge}${ileft}${string}"
 
     # Print the info.
     printf '%b\n' "${text_padding:+\e[${text_padding}C}${zws}${string//\\n}${reset} "
@@ -159,10 +171,10 @@ dynamic_prompt() {
 
 main() {
     set_colors "${ascii_colors[@]}"
+    set_text_colors
     print_ascii
     tput cup 0 0
-    prin "testing" "the thing"
-    prin "tiki from the" "three houses"
+    prin " " "$(LBR=$(lsb_release -sd); LBS="${LBR%\"}"; LBR="${LBS#\"}"; echo $LBR)"
     dynamic_prompt
 }
 
