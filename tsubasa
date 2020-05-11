@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # vim: noai:ts=4:sw=4:expandtab
-# 
+#
 # "With these new wings of mine, I can fly just about anywhere. Just watch!"
 #
 # Tsubasa: A (quick and dirty) system information tool, inspired by and using
@@ -35,12 +35,21 @@ reset='\e[0m'
 
 # Text colors, 0-255
 # Colors are: 'user-fg' 'user-bg' 'host-fg' 'host-bg' 'icon-fg' 'icon-bg' 'info-fg' 'info-bg'
-colors=(16 212 231 117 16 212 16 117)
+colors=(16 212 16 117 16 117 16 212)
 
 # Ascii colors, 0-255
 # Colors match to the ascii file, c1~c6.
 # Note that the default config (212 117 231 0 0 0) assumes the default "ReincarnationOS" ascii, which only uses three colors.
 ascii_colors=(212 117 231 0 0 0)
+
+# Color block width and height, number
+# Each block will be this number of spaces long and tall
+block_width=3
+block_height=1
+
+# Info data width, number
+# Set minimum width of data. Any shorter strings will justify right.
+info_width=24
 
 # Info block offset, number
 # In case of embedded color escape codes (which will artificially push the info block), this is a good option to use!
@@ -55,7 +64,7 @@ title_right_edge=""
 
 # Separator between user and host (for title), and category and info (for info), character(s)
 # Again, preferably Powerline special or space
-separator=" "
+separator=""
 title_separator=""
 
 # Functions
@@ -108,17 +117,61 @@ print_ascii() {
     LC_ALL=C
 }
 
+tprin() {
+    a=$(whoami)
+    b="@$(cat /etc/hostname)"
+    string="${a}${b:+${ttrans}${title_separator}${tright}$b${tredge}${title_right_edge}}"
+
+    string="$(trim "${string//$'\e[0m'}")"
+    length="$(strip_sequences "$string")"
+    length="${#length}"
+
+    # Format the output.
+    string="${string}"
+    string="${tledge}${title_left_edge}${tleft}${string}"
+
+    # Print the info.
+    printf '%b\n\n' "${text_padding:+\e[${text_padding}C}${zws}${string//\\n}${reset} "
+
+    # Calculate info height.
+    ((++info_height))
+
+    # Log that prin was used.
+    prin=1
+}
+
+color_blocks() {
+    printf "${text_padding:+\e[${text_padding}C}"
+    for ((c=$1;c <= $2;c++))
+    do
+        printf "$(tput setab $c)%${block_width}s"
+    done
+    printf "$(tput sgr0)\n"
+}
+
+print_blocks() {
+    printf "\n"
+    for ((c=0; c < $block_height;c++))
+    do
+        color_blocks 0 7;
+    done
+    for ((c=0; c < $block_height;c++))
+    do
+        color_blocks 8 15;
+    done
+}
+
 prin() {
     # If $2 doesn't exist we format $1 as info.
     if [[ "$(trim "$1")" && "$2" ]]; then
         [[ "$json" ]] && { printf '    %s\n' "\"${1}\": \"${2}\","; return; }
-
-        string="${1}${2:+${itrans}${separator}${iright}$2${iredge}${right_edge}}"
+        b=$2
+        printf -v b "%${info_width}s" "$b"
+        string="${1}${2:+${itrans}${separator}${iright}$b${iredge}${right_edge}}"
     else
         string="${2:-$1}"
     fi
 
-    string="$(trim "${string//$'\e[0m'}")"
     length="$(strip_sequences "$string")"
     length="${#length}"
 
@@ -169,13 +222,192 @@ dynamic_prompt() {
     printf "%b" "${nlines// /\\n}"
 }
 
+best_girl() {
+    source /etc/os-release
+    echo ${VARIANT}
+}
+
+os_release() {
+    source /etc/os-release
+    echo ${NAME} ${VERSION_ID}
+}
+
+kernel_ver() {
+    uname -rs
+}
+
+processor() {
+    cpu=$(awk -F '\\s*: | @' '/model name|Hardware|Processor|^cpu model|chip type|^cpu type/ { cpu=$2; if ($1 == "Hardware") exit } END { print cpu }' "/proc/cpuinfo")
+    # Remove un-needed patterns from cpu output.
+    cpu="${cpu//(TM)}"
+    cpu="${cpu//(tm)}"
+    cpu="${cpu//(R)}"
+    cpu="${cpu//(r)}"
+    cpu="${cpu//CPU}"
+    cpu="${cpu//Processor}"
+    cpu="${cpu//Dual-Core}"
+    cpu="${cpu//Quad-Core}"
+    cpu="${cpu//Six-Core}"
+    cpu="${cpu//Eight-Core}"
+    cpu="${cpu//[1-9][0-9]-Core}"
+    cpu="${cpu//[0-9]-Core}"
+    cpu="${cpu//, * Compute Cores}"
+    cpu="${cpu//Core / }"
+    cpu="${cpu//(\"AuthenticAMD\"*)}"
+    cpu="${cpu//with Radeon * Graphics}"
+    cpu="${cpu//, altivec supported}"
+    cpu="${cpu//FPU*}"
+    cpu="${cpu//Chip Revision*}"
+    cpu="${cpu//Technologies, Inc}"
+    cpu="${cpu//Core2/Core 2}"
+    # Remove CPU brand from the output.
+    cpu="${cpu/AMD }"
+    cpu="${cpu/Intel }"
+    cpu="${cpu/Core? Duo }"
+    cpu="${cpu/Qualcomm }"
+    cpu+="(x$(cat /proc/cpuinfo| grep "model name" | wc -l))"
+    echo $cpu
+}
+
+cpu_temp() {
+    # Select the right temperature file.
+    for temp_dir in /sys/class/hwmon/*; do
+        [[ "$(< "${temp_dir}/name")" =~ (coretemp|fam15h_power|k10temp) ]] && {
+            temp_dirs=("$temp_dir"/temp*_input)
+            temp_dir=${temp_dirs[0]}
+            break
+        }
+    done
+    # Get CPU temp.
+    [[ -f "$temp_dir" ]] && deg="$(($(< "$temp_dir") * 100 / 10000))"
+    echo $deg
+}
+
+cpu_of() {
+    (cat /proc/loadavg | cut -d' ' -f1; printf "/ "; a=$(cat /proc/cpuinfo | grep "model name" | wc -l); printf "%0.2f\n" "${a}";) | cat | xargs
+}
+
+ram_of() {
+    # https://github.com/KittyKatt/screenFetch/issues/386#issuecomment-249312716
+    # free isn't the most accurate measure of actual total ram
+    while IFS=":" read -r a b; do
+        case $a in
+            "MemTotal") ((mem_used+=${b/kB})); mem_total="${b/kB}" ;;
+            "Shmem") ((mem_used+=${b/kB}))  ;;
+            "MemFree" | "Buffers" | "Cached" | "SReclaimable")
+                mem_used="$((mem_used-=${b/kB}))"
+            ;;
+        esac
+    done < /proc/meminfo
+
+            mem_used="$((mem_used / 1024))"
+            mem_total="$((mem_total / 1024))"
+    printf "%s/%s MB" $mem_used $mem_total | cat | xargs
+}
+
+disk_of() {
+    (df -h | awk '$NF=="/"{printf "%s: %d/%d\n", $6,$3,$2}'; printf "GB") | cat | xargs
+}
+
+gpu_of() {
+    # Read GPUs into array.
+    gpu_cmd="$(lspci -mm | awk -F '\"|\" \"|\\(' \
+                                  '/"Display|"3D|"VGA/ {a[$0] = $1 " " $3 " " $4}
+                                   END {for(i in a) {if(!seen[a[i]]++) print a[i]}}')"
+    IFS=$'\n' read -d "" -ra gpus <<< "$gpu_cmd"
+
+    # Remove duplicate Intel Graphics outputs.
+    # This fixes cases where the outputs are both
+    # Intel but not entirely identical.
+    #
+    # Checking the first two array elements should
+    # be safe since there won't be 2 intel outputs if
+    # there's a dedicated GPU in play.
+    [[ "${gpus[0]}" == *Intel* && "${gpus[1]}" == *Intel* ]] && unset -v "gpus[0]"
+
+    for gpu in "${gpus[@]}"; do
+        # GPU shorthand tests.
+        [[ "$gpu_type" == "dedicated" && "$gpu" == *Intel* ]] || \
+        [[ "$gpu_type" == "integrated" && ! "$gpu" == *Intel* ]] && \
+            { unset -v gpu; continue; }
+
+        case $gpu in
+            *"Advanced"*)
+                brand="${gpu/*AMD*ATI*/AMD ATI}"
+                brand="${brand:-${gpu/*AMD*/AMD}}"
+                brand="${brand:-${gpu/*ATI*/ATi}}"
+                                        gpu="${gpu/\[AMD\/ATI\] }"
+                gpu="${gpu/\[AMD\] }"
+                gpu="${gpu/OEM }"
+                gpu="${gpu/Advanced Micro Devices, Inc.}"
+                gpu="${gpu/*\[}"
+                gpu="${gpu/\]*}"
+                gpu="$brand $gpu"
+            ;;
+
+            *"NVIDIA"*)
+                gpu="${gpu/*\[}"
+                gpu="${gpu/\]*}"
+                gpu="NVIDIA $gpu"
+            ;;
+
+            *"Intel"*)
+                gpu="${gpu/*Intel/Intel}"
+                gpu="${gpu/\(R\)}"
+                gpu="${gpu/Corporation}"
+                gpu="${gpu/ \(*}"
+                gpu="${gpu/Integrated Graphics Controller}"
+                gpu="${gpu/*Xeon*/Intel HD Graphics}"
+
+                [[ -z "$(trim "$gpu")" ]] && gpu="Intel Integrated Graphics"
+                [[ -z "$(trim "$gpu")" ]] && gpu="Intel Integrated Graphics"
+            ;;
+
+            *"VirtualBox"*)
+                gpu="VirtualBox Graphics Adapter"
+            ;;
+
+            *) continue ;;
+        esac
+
+        gpu="${gpu/ATI }"
+        gpu="${gpu/5600 OEM\/5600 XT \/ 5700\/}"
+        echo "$gpu"
+    done
+}
+                    
+shell_ver() {
+    $SHELL --version | cut -d\( -f1 | xargs
+}
+
+dewm_session() {
+    echo $DESKTOP_SESSION
+}
+
+uptime_fancy() {
+    uptime -p | cut -c 4-
+}
+
 main() {
     set_colors "${ascii_colors[@]}"
     set_text_colors
     print_ascii
-    tput cup 0 0
-    prin " " "$(LBR=$(lsb_release -sd); LBS="${LBR%\"}"; LBR="${LBS#\"}"; echo $LBR)"
-    dynamic_prompt
+    tput cup 1 0
+    tprin
+    prin " " "$(best_girl)"
+    prin " " "$(os_release)"
+    prin " " "$(kernel_ver)"
+    prin " " "$(processor)"
+    prin " " "$(gpu_of)"
+    prin " " "$(cpu_of)"
+    prin " " "$(ram_of)"
+    prin " " "$(disk_of)"
+    prin " " "$(shell_ver)"
+    prin " " "$(dewm_session)"
+    prin " " "$(uptime_fancy)"
+    prin " " "$(TZ="Asia/Tokyo" date +'%Y.%m.%d %H:%M:%S %Z')"
+    print_blocks
+#    dynamic_prompt
 }
 
 main
