@@ -407,7 +407,7 @@ main() {
     prin " " "$(uptime_fancy)"
     prin " " "$(TZ="Asia/Tokyo" date +'%Y.%m.%d %H:%M:%S %Z')"
     print_blocks
-#    dynamic_prompt
+    dynamic_prompt
 }
 
 main
