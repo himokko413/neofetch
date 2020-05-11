@@ -118,9 +118,7 @@ print_ascii() {
 }
 
 tprin() {
-    a=$(whoami)
-    b="@$(cat /etc/hostname)"
-    string="${a}${b:+${ttrans}${title_separator}${tright}$b${tredge}${title_right_edge}}"
+    string="${1}${2:+${ttrans}${title_separator}${tright}$2${tredge}${title_right_edge}}"
 
     string="$(trim "${string//$'\e[0m'}")"
     length="$(strip_sequences "$string")"
@@ -393,7 +391,8 @@ main() {
     set_text_colors
     print_ascii
     tput cup 1 0
-    tprin
+    tprin "$(whoami)" "@$(cat /etc/hostname)"
+    tprin "Lucina" "She/her"
     prin " " "$(best_girl)"
     prin " " "$(os_release)"
     prin " " "$(kernel_ver)"
@@ -407,7 +406,7 @@ main() {
     prin " " "$(uptime_fancy)"
     prin " " "$(TZ="Asia/Tokyo" date +'%Y.%m.%d %H:%M:%S %Z')"
     print_blocks
-    dynamic_prompt
+#    dynamic_prompt
 }
 
 main
